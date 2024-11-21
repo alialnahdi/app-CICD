@@ -46,7 +46,7 @@ jobs:
 
       - name: Backup Database (Before Migration)
         env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
+          DATABASE_URL: postgresql://postgres:123@localhost:5432/CICD-p?schema=public
           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
         run: |
           mkdir -p "$BACKUP_PATH"
