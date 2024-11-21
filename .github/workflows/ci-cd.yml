@@ -1,5 +1,3 @@
-# .github/workflows/ci-cd.yml
-
 name: CI/CD Pipeline
 
 on:
@@ -52,7 +50,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
         run: |
-          pg_dump $DATABASE_URL > $BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql
+          mkdir -p "$BACKUP_PATH"
+          if [[ -z "$DATABASE_URL" || -z "$BACKUP_PATH" ]]; then
+            echo "Error: DATABASE_URL or BACKUP_PATH is not set properly."
+            exit 1
+          fi
+          pg_dump "$DATABASE_URL" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
+        shell: bash
 
       - name: Run Migrations
         env:
