@@ -44,10 +44,9 @@ jobs:
         run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
         shell: bash
 
-      - name: Backup Database (Production Only)
-        if: ${{ github.env.ENV }} == 'production'
+      - name: Backup Database (Before Migration)
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
         run: |
           mkdir -p "$BACKUP_PATH"
@@ -58,16 +57,33 @@ jobs:
           pg_dump "${DATABASE_URL}" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
         shell: bash
 
-      - name: Run Migrations
+      - name: Check for Database Changes (Skip Migration if None)
+        id: check-diff
+        run: |
+          npx prisma migrate diff --from-schema-datasource --to-migrations --exit-code
+        continue-on-error: true
+
+      - name: Run Migrations (If Changes Detected)
+        if: steps.check-diff.outcome == 'success'
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
         run: npm run migrate
 
-      - name: Seed Database (Non-Production)
-        if: ${{ github.env.ENV }} == 'development'
+      - name: Seed Database (Using Backup)
+        if: ${{ github.env.ENV }} == 'development' && steps.check-diff.outcome == 'success'
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: npm run seed
+          BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
+        run: |
+          # Use the most recent backup for seeding
+          BACKUP_FILE=$(ls -t "$BACKUP_PATH" | head -n 1)
+          if [[ -f "$BACKUP_PATH/$BACKUP_FILE" ]]; then
+            psql "${DATABASE_URL}" < "$BACKUP_PATH/$BACKUP_FILE"
+          else
+            echo "No backup file found for seeding."
+            exit 1
+          fi
+        shell: bash
 
       - name: Run Tests
         env:
