@@ -37,17 +37,17 @@ jobs:
           fi
 
       - name: Set Database URL for Production
-        if: env.ENV == 'production'
+        if: ${{ github.env.ENV }} == 'production'
         run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
         shell: bash
 
       - name: Set Database URL for Development
-        if: env.ENV == 'development'
+        if: ${{ github.env.ENV }} == 'development'
         run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
         shell: bash
 
       - name: Backup Database (Production Only)
-        if: env.ENV == 'production'
+        if: ${{ github.env.ENV }} == 'production'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
@@ -60,7 +60,7 @@ jobs:
         run: npm run migrate
 
       - name: Seed Database (Non-Production)
-        if: env.ENV == 'development'
+        if: ${{ github.env.ENV }} == 'development'
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
         run: npm run seed
