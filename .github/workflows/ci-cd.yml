@@ -26,7 +26,7 @@ jobs:
         run: npm run build
 
       - name: Determine Environment
-        id: set-env  # تغيير المعرف لتجنب التعارض
+        id: set-env
         run: |
           if [[ '${{ github.ref }}' == 'refs/heads/main' ]]; then
             echo "ENV=production" >> $GITHUB_ENV
@@ -55,7 +55,7 @@ jobs:
             echo "Error: DATABASE_URL or BACKUP_PATH is not set properly."
             exit 1
           fi
-          pg_dump "$DATABASE_URL" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
+          pg_dump "${DATABASE_URL}" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
         shell: bash
 
       - name: Run Migrations
