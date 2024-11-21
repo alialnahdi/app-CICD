@@ -1,0 +1,73 @@
+# .github/workflows/ci-cd.yml
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build the project
+        run: npm run build
+
+      - name: Determine Environment
+        id: env
+        run: |
+          if [[ '${{ github.ref }}' == 'refs/heads/main' ]]; then
+            echo "ENV=production" >> $GITHUB_ENV
+          else
+            echo "ENV=development" >> $GITHUB_ENV
+          fi
+
+      - name: Set Database URL for Production
+        if: env.ENV == 'production'
+        run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Set Database URL for Development
+        if: env.ENV == 'development'
+        run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Backup Database (Production Only)
+        if: env.ENV == 'production'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
+        run: |
+          pg_dump $DATABASE_URL > $BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql
+
+      - name: Run Migrations
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npm run migrate
+
+      - name: Seed Database (Non-Production)
+        if: env.ENV == 'development'
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npm run seed
+
+      - name: Run Tests
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npm test
+
+      # Add deployment steps here
