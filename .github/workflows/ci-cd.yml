@@ -44,22 +44,41 @@ jobs:
         run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
         shell: bash
 
+      - name: Extract Database Connection Details
+        id: extract-db-details
+        run: |
+          regex='postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)'
+          if [[ $DATABASE_URL =~ $regex ]]; then
+            echo "DB_USER=${BASH_REMATCH[1]}" >> $GITHUB_ENV
+            echo "DB_PASSWORD=${BASH_REMATCH[2]}" >> $GITHUB_ENV
+            echo "DB_HOST=${BASH_REMATCH[3]}" >> $GITHUB_ENV
+            echo "DB_PORT=${BASH_REMATCH[4]}" >> $GITHUB_ENV
+            echo "DB_NAME=${BASH_REMATCH[5]}" >> $GITHUB_ENV
+          else
+            echo "Error: DATABASE_URL is not in the expected format." >&2
+            exit 1
+          fi
+
       - name: Backup Database (Before Migration)
         env:
-          DATABASE_URL: postgresql://postgres:123@localhost:5432/CICD-p?schema=public
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_HOST: ${{ env.DB_HOST }}
+          DB_PORT: ${{ env.DB_PORT }}
+          DB_NAME: ${{ env.DB_NAME }}
           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
         run: |
           mkdir -p "$BACKUP_PATH"
-          if [[ -z "$DATABASE_URL" || -z "$BACKUP_PATH" ]]; then
-            echo "Error: DATABASE_URL or BACKUP_PATH is not set properly."
+          if [[ -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$DB_HOST" || -z "$DB_PORT" || -z "$DB_NAME" ]]; then
+            echo "Error: Database connection details are not set properly."
             exit 1
           fi
 
           # Export password to use with pg_dump
-          export PGPASSWORD=$(echo $DATABASE_URL | sed -n 's/^postgresql:\/\/[^:]*:\([^@]*\)@.*$/\1/p')
+          export PGPASSWORD="$DB_PASSWORD"
 
-          # Run the pg_dump command directly with DATABASE_URL
-          pg_dump "$DATABASE_URL" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
+          # Run the pg_dump command
+          pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
 
           # Check if pg_dump was successful
           if [[ $? -ne 0 ]]; then
@@ -83,13 +102,18 @@ jobs:
       - name: Seed Database (Using Backup)
         if: ${{ github.env.ENV }} == 'development' && steps.check-diff.outcome == 'success'
         env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_HOST: ${{ env.DB_HOST }}
+          DB_PORT: ${{ env.DB_PORT }}
+          DB_NAME: ${{ env.DB_NAME }}
           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
         run: |
           # Use the most recent backup for seeding
           BACKUP_FILE=$(ls -t "$BACKUP_PATH" | head -n 1)
           if [[ -f "$BACKUP_PATH/$BACKUP_FILE" ]]; then
-            psql "$DATABASE_URL" < "$BACKUP_PATH/$BACKUP_FILE"
+            export PGPASSWORD="$DB_PASSWORD"
+            psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME" < "$BACKUP_PATH/$BACKUP_FILE"
           else
             echo "No backup file found for seeding."
             exit 1
