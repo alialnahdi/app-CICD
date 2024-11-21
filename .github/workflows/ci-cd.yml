@@ -60,7 +60,7 @@ jobs:
           DB_PASSWORD=$(echo $DATABASE_URL | sed -n 's/^postgresql:\/\/[^:]*:\([^@]*\)@.*$/\1/p')
           DB_HOST=$(echo $DATABASE_URL | sed -n 's/^postgresql:\/\/[^@]*@\([^:]*\):.*$/\1/p')
           DB_PORT=$(echo $DATABASE_URL | sed -n 's/^postgresql:\/\/[^@]*@[^:]*:\([0-9]*\)\/.*$/\1/p')
-          DB_NAME=$(echo $DATABASE_URL | sed -n 's/^postgresql:\/\/[^@]*@[^:]*:[0-9]*\/\(.*\)$/\1/p')
+          DB_NAME=$(echo $DATABASE_URL | sed -n 's/^postgresql:\/\/[^@]*@[^:]*:[0-9]*\/\([^?]*\).*$/\1/p')
 
           if [[ -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$DB_HOST" || -z "$DB_PORT" || -z "$DB_NAME" ]]; then
             echo "Error: Failed to parse the DATABASE_URL."
