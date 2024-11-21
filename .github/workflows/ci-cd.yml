@@ -28,7 +28,7 @@ jobs:
         run: npm run build
 
       - name: Determine Environment
-        id: set-env  # تم تغيير المعرف من 'env' إلى 'set-env'
+        id: set-env  # تغيير المعرف لتجنب التعارض
         run: |
           if [[ '${{ github.ref }}' == 'refs/heads/main' ]]; then
             echo "ENV=production" >> $GITHUB_ENV
