@@ -168,3 +168,8 @@ jobs:
 
       - name: Run Prisma Migrate
         run: npx prisma migrate deploy
+           
+      - name: Backup Database
+        run: PGPASSWORD=123 pg_dump -U postgres -h localhost -Fc -f backup_$(date +%Y%m%d%H%M%S).dump CICD
+      
+        
