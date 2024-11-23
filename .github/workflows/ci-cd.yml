@@ -1,126 +1,3 @@
-# name: CI/CD Pipeline
-
-# on:
-#   push:
-#     branches:
-#       - dev
-
-# jobs:
-#   build-and-deploy:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-
-#       - name: Set up Node.js
-#         uses: actions/setup-node@v3
-#         with:
-#           node-version: '20.x'
-
-#       - name: Install dependencies
-#         run: npm install
-
-#       - name: Build the project
-#         run: npm run build
-
-#       - name: Determine Environment
-#         id: set-env
-#         run: |
-#           if [[ '${{ github.ref }}' == 'refs/heads/main' ]]; then
-#             echo "ENV=production" >> $GITHUB_ENV
-#           else
-#             echo "ENV=development" >> $GITHUB_ENV
-#           fi
-
-#       - name: Set Database URL for Development
-#         run: echo "DATABASE_URL=${{ secrets.DATABASE_URL_DEV }}" >> $GITHUB_ENV
-#         shell: bash
-
-#       - name: Extract Database Connection Details
-#         id: extract-db-details
-#         run: |
-#           regex='postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)'
-#           if [[ "$DATABASE_URL" =~ $regex ]]; then
-#             echo "DB_USER=${BASH_REMATCH[1]}" >> $GITHUB_ENV
-#             echo "DB_PASSWORD=${BASH_REMATCH[2]}" >> $GITHUB_ENV
-#             echo "DB_HOST=${BASH_REMATCH[3]}" >> $GITHUB_ENV
-#             echo "DB_PORT=${BASH_REMATCH[4]}" >> $GITHUB_ENV
-#             echo "DB_NAME=${BASH_REMATCH[5]}" >> $GITHUB_ENV
-#           else
-#             echo "Error: DATABASE_URL is not in the expected format." >&2
-#             exit 1
-#           fi
-#         env:
-#           DATABASE_URL: ${{ env.DATABASE_URL }}
-
-#       - name: Backup Database (Before Migration)
-#         env:
-#           DB_USER: ${{ env.DB_USER }}
-#           DB_PASSWORD: ${{ env.DB_PASSWORD }}
-#           DB_HOST: ${{ env.DB_HOST }}
-#           DB_PORT: ${{ env.DB_PORT }}
-#           DB_NAME: ${{ env.DB_NAME }}
-#           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
-#         run: |
-#           mkdir -p "$BACKUP_PATH"
-#           if [[ -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$DB_HOST" || -z "$DB_PORT" || -z "$DB_NAME" ]]; then
-#             echo "Error: Database connection details are not set properly."
-#             exit 1
-#           fi
-
-#           # Export password to use with pg_dump
-#           export PGPASSWORD="$DB_PASSWORD"
-
-#           # Run the pg_dump command
-#           pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME" > "$BACKUP_PATH/db_backup_$(date +%F-%H-%M-%S).sql"
-
-#           # Check if pg_dump was successful
-#           if [[ $? -ne 0 ]]; then
-#             echo "Error: pg_dump failed."
-#             exit 1
-#           fi
-#         shell: bash
-
-#       - name: Check for Database Changes (Skip Migration if None)
-#         id: check-diff
-#         run: |
-#           npx prisma migrate diff --from-schema-datasource --to-migrations --exit-code
-#         continue-on-error: true
-
-#       - name: Run Migrations (If Changes Detected)
-#         if: steps.check-diff.outcome == 'success'
-#         env:
-#           DATABASE_URL: ${{ env.DATABASE_URL }}
-#         run: npm run migrate
-
-#       - name: Seed Database (Using Backup)
-#         if: ${{ github.env.ENV }} == 'development' && steps.check-diff.outcome == 'success'
-#         env:
-#           DB_USER: ${{ env.DB_USER }}
-#           DB_PASSWORD: ${{ env.DB_PASSWORD }}
-#           DB_HOST: ${{ env.DB_HOST }}
-#           DB_PORT: ${{ env.DB_PORT }}
-#           DB_NAME: ${{ env.DB_NAME }}
-#           BACKUP_PATH: ${{ secrets.BACKUP_PATH }}
-#         run: |
-#           # Use the most recent backup for seeding
-#           BACKUP_FILE=$(ls -t "$BACKUP_PATH" | head -n 1)
-#           if [[ -f "$BACKUP_PATH/$BACKUP_FILE" ]]; then
-#             export PGPASSWORD="$DB_PASSWORD"
-#             psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME" < "$BACKUP_PATH/$BACKUP_FILE"
-#           else
-#             echo "No backup file found for seeding."
-#             exit 1
-#           fi
-#         shell: bash
-
-#       - name: Run Tests
-#         env:
-#           DATABASE_URL: ${{ env.DATABASE_URL }}
-#         run: npm test
-
-#       # Add deployment steps here
 name: Prisma Migrations 
 
 on:
@@ -166,10 +43,42 @@ jobs:
         run: |
           echo "DATABASE_URL=postgresql://postgres:123@localhost:5432/CICD?schema=public" > .env
 
+      # 1. عمل نسخة احتياطية قبل الميجريشن
+      - name: Backup Database (Before Migration)
+        run: |
+          mkdir -p backups
+          export PGPASSWORD=123
+          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_$(date +%Y%m%d%H%M%S).dump CICD
+        shell: bash
+
+      # 2. تنفيذ الميجريشن باستخدام Prisma
       - name: Run Prisma Migrate
         run: npx prisma migrate deploy
-           
-      - name: Backup Database
-        run: PGPASSWORD=123 pg_dump -U postgres -h localhost -Fc -f backup_$(date +%Y%m%d%H%M%S).dump CICD
-      
-        
+
+      # 3. التحقق من نجاح الميجريشن
+      - name: Verify Migration Success
+        run: |
+          if [ $? -ne 0 ]; then
+            echo "Migration failed. Restoring the database."
+            # Use the most recent backup to restore if migration fails
+            BACKUP_FILE=$(ls -t backups | head -n 1)
+            if [[ -f "backups/$BACKUP_FILE" ]]; then
+              psql -U postgres -h localhost -d CICD -f "backups/$BACKUP_FILE"
+              echo "Database restored successfully."
+              exit 1
+            else
+              echo "No backup file found for restoration."
+              exit 1
+            fi
+          else
+            echo "Migration completed successfully."
+          fi
+        shell: bash
+
+      # 4. عمل نسخة احتياطية بعد الميجريشن (اختياري)
+      - name: Backup Database (After Migration)
+        run: |
+          mkdir -p backups
+          export PGPASSWORD=123
+          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_after_migration_$(date +%Y%m%d%H%M%S).dump CICD
+        shell: bash
