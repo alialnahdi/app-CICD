@@ -121,7 +121,7 @@
 #         run: npm test
 
 #       # Add deployment steps here
-name: Prisma Migrations Automation
+name: Prisma Migrations 
 
 on:
   push:
