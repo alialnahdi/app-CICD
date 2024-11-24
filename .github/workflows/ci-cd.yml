@@ -1,4 +1,4 @@
-name: Prisma Migrations 
+name: Flyway Migrations
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - dev
 
 jobs:
-  prisma-migrate:
+  flyway-migrate:
     runs-on: ubuntu-latest
 
     services:
@@ -39,23 +39,30 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Set up Prisma Environment
+      - name: Set up Flyway Environment
         run: |
-          echo "DATABASE_URL=postgresql://postgres:123@localhost:5432/CICD?schema=public" > .env
+          echo "DATABASE_URL=postgresql://postgres:123@localhost:5432/mydb" > .env
+          mkdir -p flyway/sql
 
-      # 1. عمل نسخة احتياطية قبل الميجريشن
+      - name: Download Flyway CLI
+        run: |
+          curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/9.0.4/flyway-commandline-9.0.4-linux-x64.tar.gz | tar xvz
+          sudo ln -s $(pwd)/flyway-9.0.4/flyway /usr/local/bin/flyway
+
+      # 1. Backup database before migration
       - name: Backup Database (Before Migration)
         run: |
           mkdir -p backups
           export PGPASSWORD=123
-          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_$(date +%Y%m%d%H%M%S).dump CICD
+          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_$(date +%Y%m%d%H%M%S).dump mydb
         shell: bash
 
-      # 2. تنفيذ الميجريشن باستخدام Prisma
-      - name: Run Prisma Migrate
-        run: npx prisma migrate deploy
+      # 2. Run Flyway Migrations
+      - name: Run Flyway Migrate
+        run: |
+          flyway -url=jdbc:postgresql://localhost:5432/mydb -user=postgres -password=123 migrate
 
-      # 3. التحقق من نجاح الميجريشن
+      # 3. Verify Migration Success
       - name: Verify Migration Success
         run: |
           if [ $? -ne 0 ]; then
@@ -63,7 +70,7 @@ jobs:
             # Use the most recent backup to restore if migration fails
             BACKUP_FILE=$(ls -t backups | head -n 1)
             if [[ -f "backups/$BACKUP_FILE" ]]; then
-              psql -U postgres -h localhost -d CICD -f "backups/$BACKUP_FILE"
+              pg_restore -U postgres -h localhost -d mydb "backups/$BACKUP_FILE"
               echo "Database restored successfully."
               exit 1
             else
@@ -75,10 +82,10 @@ jobs:
           fi
         shell: bash
 
-      # 4. عمل نسخة احتياطية بعد الميجريشن (اختياري)
+      # 4. Backup database after migration (Optional)
       - name: Backup Database (After Migration)
         run: |
           mkdir -p backups
           export PGPASSWORD=123
-          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_after_migration_$(date +%Y%m%d%H%M%S).dump CICD
+          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_after_migration_$(date +%Y%m%d%H%M%S).dump mydb
         shell: bash
