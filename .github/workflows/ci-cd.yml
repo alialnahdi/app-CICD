@@ -49,6 +49,21 @@ jobs:
           curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/9.0.4/flyway-commandline-9.0.4-linux-x64.tar.gz | tar xvz
           sudo ln -s $(pwd)/flyway-9.0.4/flyway /usr/local/bin/flyway
 
+      # Wait for PostgreSQL to be ready
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL..."
+            sleep 5
+          done
+        shell: bash
+
+      # Ensure the database exists
+      - name: Create Database if Not Exists
+        run: |
+          PGPASSWORD=123 psql -U postgres -h localhost -tc "SELECT 1 FROM pg_database WHERE datname = 'CICD'" | grep -q 1 || PGPASSWORD=123 psql -U postgres -h localhost -c "CREATE DATABASE \"CICD\";"
+        shell: bash
+
       # 1. Backup database before migration
       - name: Backup Database (Before Migration)
         run: |
