@@ -75,25 +75,20 @@ jobs:
       # 2. Run Flyway Migrations
       - name: Run Flyway Migrate
         run: |
-          flyway -url=jdbc:postgresql://localhost:5432/CICD?schema=public -user=postgres -password=123 migrate || exit 1
+          flyway -url=jdbc:postgresql://localhost:5432/CICD?schema=public -user=postgres -password=123 migrate
+        shell: bash
 
-      # 3. Verify Migration Success
-      - name: Verify Migration Success
+      # 3. Restore Data from Backup
+      - name: Restore Data After Migration
         run: |
-          if [ $? -ne 0 ]; then
-            echo "Migration failed. Restoring the database."
-            # Use the most recent backup to restore if migration fails
-            BACKUP_FILE=$(ls -t backups | head -n 1)
-            if [[ -f "backups/$BACKUP_FILE" ]]; then
-              pg_restore -U postgres -h localhost -d CICD "backups/$BACKUP_FILE"
-              echo "Database restored successfully."
-              exit 1
-            else
-              echo "No backup file found for restoration."
-              exit 1
-            fi
+          export PGPASSWORD=123
+          BACKUP_FILE=$(ls -t backups/db_backup_*.dump | head -n 1)
+          if [[ -f "$BACKUP_FILE" ]]; then
+            pg_restore -U postgres -h localhost -d CICD --data-only "$BACKUP_FILE"
+            echo "Data restored successfully after migration."
           else
-            echo "Migration completed successfully."
+            echo "No backup file found for data restoration."
+            exit 1
           fi
         shell: bash
 
