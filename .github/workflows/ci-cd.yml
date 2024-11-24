@@ -16,7 +16,7 @@ jobs:
       postgres:
         image: postgres:13
         env:
-          POSTGRES_DB: mydb
+          POSTGRES_DB: CICD
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: 123
         ports:
