@@ -1,0 +1,101 @@
+name: Flyway Migrations
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  flyway-migrate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: CICD
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: 123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Set up Flyway Environment
+        run: |
+          echo "DATABASE_URL=postgresql://postgres:123@localhost:5432/CICD?schema=public" > .env
+          mkdir -p flyway/sql
+
+      - name: Download Flyway CLI
+        run: |
+          curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/9.0.4/flyway-commandline-9.0.4-linux-x64.tar.gz | tar xvz
+          sudo ln -s $(pwd)/flyway-9.0.4/flyway /usr/local/bin/flyway
+
+      # Wait for PostgreSQL to be ready
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL..."
+            sleep 5
+          done
+        shell: bash
+
+      # Ensure the database exists
+      - name: Create Database if Not Exists
+        run: |
+          PGPASSWORD=123 psql -U postgres -h localhost -tc "SELECT 1 FROM pg_database WHERE datname = 'CICD'" | grep -q 1 || PGPASSWORD=123 psql -U postgres -h localhost -c "CREATE DATABASE \"CICD\";"
+        shell: bash
+
+      # 1. Backup database before migration
+      - name: Backup Database (Before Migration)
+        run: |
+          mkdir -p backups
+          export PGPASSWORD=123
+          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_$(date +%Y%m%d%H%M%S).dump CICD
+        shell: bash
+
+      # 2. Run Flyway Migrations
+      - name: Run Flyway Migrate
+        run: |
+          flyway -url=jdbc:postgresql://localhost:5432/CICD?schema=public -user=postgres -password=123 migrate
+        shell: bash
+
+      # 3. Restore Data from Backup
+      - name: Restore Data After Migration
+        run: |
+          export PGPASSWORD=123
+          BACKUP_FILE=$(ls -t backups/db_backup_*.dump | head -n 1)
+          if [[ -f "$BACKUP_FILE" ]]; then
+            pg_restore -U postgres -h localhost -d CICD --data-only "$BACKUP_FILE"
+            echo "Data restored successfully after migration."
+          else
+            echo "No backup file found for data restoration."
+            exit 1
+          fi
+        shell: bash
+
+      # 4. Backup database after migration (Optional)
+      - name: Backup Database (After Migration)
+        run: |
+          mkdir -p backups
+          export PGPASSWORD=123
+          pg_dump -U postgres -h localhost -Fc -f backups/db_backup_after_migration_$(date +%Y%m%d%H%M%S).dump CICD
+        shell: bash
