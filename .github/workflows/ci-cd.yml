@@ -32,7 +32,7 @@ jobs:
         username: ubuntu
         key: ${{ secrets.SSH_KEY }}
         script: |
-          cd /var/www/your-project
+          cd /app-CICD
           git pull
           npm install
-          pm2 restart your-app-name
+          pm2 restart app-CICD
